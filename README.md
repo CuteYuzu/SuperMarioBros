@@ -8,7 +8,7 @@
 
 ## 📺 演示视频
 
-[![Demo Video](https://img.shields.io/badge/B%E7%AB%99-%E8%A7%86%E9%A2%91%E9%93%BB%E5%8F%82)](https://www.bilibili.com/video/BVxxx)
+[![Demo Video](https://img.shields.io/badge/B%E7%AB%99-%E8%A7%86%E9%A2%91%E9%93%BB%E5%8F%82)]([https://www.bilibili.com/video/BVxxx](https://www.bilibili.com/video/BV1YGwkzwEah/))
 
 > 玩法 Demo 示例，使用的是 I can't wait 这张图
 
@@ -67,7 +67,7 @@
 | **Day Core** | 变暗效果 |
 | **Hard Rock** | 增加难度（AR/OD/HP × 1.4）|
 | **Double Time** | 加速（1.5x）|
-| **Night Core** | 加速 + 变暗 |
+| **Night Core** | 加速 + 音频升调 |
 | **Auto** | 自动游玩，Spiny 不会导致 Miss |
 
 ---
