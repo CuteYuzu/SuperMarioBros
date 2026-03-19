@@ -50,6 +50,14 @@ namespace osu.Game.Rulesets.SuperMarioBros.Objects
         public bool IsKicked => isKicked;
         public new EnemyState State => state;
         
+        /// <summary>
+        /// 获取物件的实际持续时间（毫秒）
+        /// </summary>
+        public double GetDuration()
+        {
+            return duration;
+        }
+        
         public DrawableSuperMarioHitObject(SuperMarioHitObject hitObject)
             : base(hitObject)
         {

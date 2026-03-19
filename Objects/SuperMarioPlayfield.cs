@@ -124,7 +124,9 @@ namespace osu.Game.Rulesets.SuperMarioBros
             {
                 if (hitObject is DrawableSuperMarioHitObject enemy)
                 {
-                    double objEndTime = enemy.HitObject.StartTime + enemy.HitObject.SliderDuration;
+                    // 使用AR计算的实际持续时间，而非SliderDuration
+                    double duration = enemy.GetDuration();
+                    double objEndTime = enemy.HitObject.StartTime + duration;
                     if (objEndTime > lastObjectEndTime)
                         lastObjectEndTime = objEndTime;
                 }
@@ -182,7 +184,10 @@ namespace osu.Game.Rulesets.SuperMarioBros
                     case SuperMarioObjectType.Koopa:
                         // Koopa判定：Mario的X坐标 > Koopa的X坐标 = 击杀
                         // 即Mario跑到了Koopa前面
-                        if (enemyState == EnemyState.Normal && Mario.X > enemy.X)
+                        // 添加时间检查：确保游戏开始后至少0.5秒才触发，避免开局误判
+                        if (enemyState == EnemyState.Normal && 
+                            Mario.X > enemy.X && 
+                            Time.Current > enemy.HitObject.StartTime)
                         {
                             enemy.TriggerKoopaKill();
                             scoreProcessor?.OnKoopaKill();
