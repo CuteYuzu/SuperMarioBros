@@ -8,7 +8,7 @@
 
 ## 📺 演示视频
 
-[![Demo Video](https://img.shields.io/badge/B%E7%AB%99-%E8%A7%86%E9%A2%91%E9%93%BB%E5%8F%82)]([https://www.bilibili.com/video/BVxxx](https://www.bilibili.com/video/BV1YGwkzwEah/))
+[![Demo Video](https://img.shields.io/badge/B%E7%AB%99-%E8%A7%86%E9%A2%91%E9%93%BB%E5%8F%82)](https://www.bilibili.com/video/BV1YGwkzwEah/)
 
 > 玩法 Demo 示例，使用的是 I can't wait 这张图
 
