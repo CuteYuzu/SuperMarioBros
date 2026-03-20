@@ -12,7 +12,7 @@
 
 > 玩法 Demo 示例，使用的是 I can't wait 这张图
 
-[![Demo Video2](https://www.bilibili.com/video/BV1K4AxzrENs/?spm_id_from=333.1369.top_right_bar_window_dynamic.content.click&vd_source=0c35418295ab67f7d2e8a624e1ec1284)
+[![Demo Video2](https://img.shields.io/badge/B%E7%AB%99-%E8%A7%86%E9%A2%91%E9%93%BB%E5%8F%82)](https://www.bilibili.com/video/BV1K4AxzrENs/?spm_id_from=333.1369.top_right_bar_window_dynamic.content.click&vd_source=0c35418295ab67f7d2e8a624e1ec1284)
 > 第二个Demo
 
 ---
