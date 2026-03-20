@@ -2,6 +2,8 @@ using osu.Game.Beatmaps;
 using osu.Game.Rulesets.Objects;
 using osu.Game.Rulesets.Objects.Types;
 using osu.Game.Rulesets.SuperMarioBros;
+using osu.Game.Rulesets.SuperMarioBros.Beatmaps;
+using osu.Game.Rulesets.SuperMarioBros.Objects;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
@@ -21,6 +23,8 @@ namespace osu.Game.Rulesets.SuperMarioBros
         }
 
         public override bool CanConvert() => Beatmap.HitObjects.Count > 0;
+
+        protected override Beatmap<SuperMarioHitObject> CreateBeatmap() => new SuperMarioBeatmap();
 
         protected override IEnumerable<SuperMarioHitObject> ConvertHitObject(HitObject obj, IBeatmap beatmap, CancellationToken cancellationToken)
         {

@@ -34,6 +34,11 @@ namespace osu.Game.Rulesets.SuperMarioBros.UI
         private bool isMovingRight;
         private bool isHoldingJump;
         private bool isDashing;
+        
+        // 跳跃冷却：必须松开跳跃键后才能再次起跳
+        private bool canJump = true;
+        // 提前起跳范围（像素）
+        private const float EarlyJumpThreshold = 4f;
 
         public bool IsInvincible { get; private set; }
         private bool isDead;
@@ -166,24 +171,29 @@ namespace osu.Game.Rulesets.SuperMarioBros.UI
         {
             if (currentState == MarioActionState.Dead) return;
             
-            // 可以在地面上起跳
+            // 检查是否可以跳跃（必须先松开跳跃键）
+            if (!canJump) return;
+            
+            // 优先使用完全着地的状态
             if (isOnGround)
             {
                 VelocityY = JumpVelocity;
                 isHoldingJump = true;
                 isOnGround = false;
                 currentState = MarioActionState.Jumping;
+                canJump = false;  // 开始跳跃后必须松开键
                 return;
             }
             
-            // 或者离地4px以内且速度方向向下时，也可以起跳（提升跳跃手感）
-            float distanceToGround = Y - GroundY;
-            if (distanceToGround <= 4 && VelocityY > 0)
+            // 提前起跳：距离地面4像素内也可以跳
+            float distanceToGround = GroundY - Y;
+            if (distanceToGround <= EarlyJumpThreshold && VelocityY >= 0)
             {
                 VelocityY = JumpVelocity;
                 isHoldingJump = true;
                 isOnGround = false;
                 currentState = MarioActionState.Jumping;
+                canJump = false;  // 开始跳跃后必须松开键
             }
         }
 
@@ -191,6 +201,9 @@ namespace osu.Game.Rulesets.SuperMarioBros.UI
         {
             isHoldingJump = false;
             if (VelocityY < 0) VelocityY *= 0.5f;
+            
+            // 松开跳跃键后，允许再次起跳
+            canJump = true;
         }
 
         public void ApplyStompBounce(bool isJumpHeld = false)

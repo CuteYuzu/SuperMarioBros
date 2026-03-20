@@ -1,4 +1,6 @@
+using System;
 using System.Collections.Generic;
+using System.Linq;
 using osu.Game.Beatmaps;
 using osu.Game.Replays;
 using osu.Game.Rulesets.Mods;
@@ -9,98 +11,220 @@ using osuTK;
 namespace osu.Game.Rulesets.SuperMarioBros.Replays
 {
     /// <summary>
-    /// Auto Generator - 自动生成回放数据
+    /// Auto Generator - 参考Tau实现
     /// </summary>
     public class SuperMarioAutoGenerator : AutoGenerator
     {
-        // 常量定义
-        private const float MARIO_START_X = 100f;
-        private const float GROUND_Y = 0f;
-        private const float SPAWN_X = 1400f;
-        private const float JUMP_DETECT_DISTANCE = 150f; // 距离敌人多少像素时起跳
+        #region Constants
         
+        // Mario位置常量
+        private const float JUDGMENT_X = 200f;      // 判定线X
+        private const float GROUND_Y = 468f;        // 地面Y
+        private const float SPAWN_X = 1400f;        // 生成X
+        private const float ENEMY_SPEED = 60f;      // 敌人移动速度 px/s
+        private const float MARIO_SPEED = 400f;     // Mario移动速度 px/s
+        private const float JUMP_DETECT_DISTANCE = 200f; // 起跳检测距离
+        private const float JUMP_HEIGHT = 150f;      // 跳跃高度
+        
+        #endregion
+        
+        #region Fields
+        
+        protected Replay Replay;
+        protected List<ReplayFrame> Frames => Replay.Frames;
+        
+        private readonly IReadOnlyList<IApplicableToRate> timeAffectingMods;
+        private int buttonIndex;
+        
+        #endregion
+
         public SuperMarioAutoGenerator(IBeatmap beatmap, IReadOnlyList<Mod> mods) 
             : base(beatmap)
         {
             Replay = new Replay();
+            timeAffectingMods = mods.OfType<IApplicableToRate>().ToList();
         }
-
-        protected Replay Replay;
 
         public override Replay Generate()
         {
-            // 添加初始帧
-            Replay.Frames.Add(new SuperMarioReplayFrame(-100000, MARIO_START_X, GROUND_Y));
+            // 获取敌人列表
+            var enemies = GetOrderedEnemies();
             
-            // 获取所有敌人物件
-            var enemies = new List<ReplayEnemy>();
-            foreach (var obj in Beatmap.HitObjects)
-            {
-                if (obj is SuperMarioHitObject smbObj)
-                {
-                    float x = SPAWN_X - (float)(obj.StartTime * 60); // 假设速度为60px/s
-                    enemies.Add(new ReplayEnemy
-                    {
-                        Time = obj.StartTime,
-                        X = x,
-                        ObjectType = smbObj.ObjectType
-                    });
-                }
-            }
+            if (enemies.Count == 0)
+                return Replay;
+                
+            // 初始帧
+            AddFrameToReplay(new SuperMarioReplayFrame(-100000, JUDGMENT_X, GROUND_Y, false, false));
             
-            // 按时间排序
-            enemies.Sort((a, b) => a.Time.CompareTo(b.Time));
-            
-            // 生成回放帧
-            double lastTime = -100000;
-            float currentX = MARIO_START_X;
-            float currentY = GROUND_Y;
-            bool isJumping = false;
+            // 生成回放
+            buttonIndex = 0;
             
             foreach (var enemy in enemies)
             {
-                // 生成从上一个时间点到敌人出现时间点的帧
-                double frameTime = enemy.Time - 2000; // 提前2秒开始预测
-                
-                if (frameTime > lastTime)
-                {
-                    // 决定是否起跳
-                    bool shouldJump = false;
-                    float distanceToEnemy = enemy.X - currentX;
-                    
-                    // 如果是 Spiny，且距离足够近，需要起跳
-                    if (enemy.ObjectType == SuperMarioObjectType.Spiny && distanceToEnemy < JUMP_DETECT_DISTANCE && distanceToEnemy > 0)
-                    {
-                        shouldJump = true;
-                    }
-                    
-                    // 添加帧
-                    Replay.Frames.Add(new SuperMarioReplayFrame(
-                        frameTime,
-                        currentX,
-                        currentY,
-                        shouldJump,
-                        false
-                    ));
-                    
-                    lastTime = frameTime;
-                    
-                    // 如果起跳了，更新状态
-                    if (shouldJump)
-                    {
-                        isJumping = true;
-                    }
-                }
+                AddEnemyReplay(enemy);
             }
+            
+            // 添加结束帧
+            var lastFrame = (SuperMarioReplayFrame)Frames.LastOrDefault();
+            float endX = lastFrame?.X ?? JUDGMENT_X;
+            float endY = lastFrame?.Y ?? GROUND_Y;
+            AddFrameToReplay(new SuperMarioReplayFrame(enemies.Last().StartTime + 5000, endX, endY, false, false));
             
             return Replay;
         }
         
-        private class ReplayEnemy
+        private List<SuperMarioHitObject> GetOrderedEnemies()
         {
-            public double Time { get; set; }
-            public float X { get; set; }
-            public SuperMarioObjectType ObjectType { get; set; }
+            var enemies = new List<SuperMarioHitObject>();
+            foreach (var obj in Beatmap.HitObjects)
+            {
+                if (obj is SuperMarioHitObject smbObj)
+                {
+                    enemies.Add(smbObj);
+                }
+            }
+            return enemies.OrderBy(e => e.StartTime).ToList();
         }
+        
+        private void AddEnemyReplay(SuperMarioHitObject enemy)
+        {
+            var lastFrame = (SuperMarioReplayFrame)Frames.LastOrDefault();
+            float startX = lastFrame?.X ?? JUDGMENT_X;
+            float startY = lastFrame?.Y ?? GROUND_Y;
+            double lastTime = lastFrame?.Time ?? -100000;
+            
+            // 计算敌人到达时间
+            double enemyTime = enemy.StartTime;
+            
+            // 等待时间
+            double waitTime = enemyTime - 2000; // 提前2秒准备
+            if (waitTime > lastTime)
+            {
+                // 添加等待帧（保持在当前位置）
+                AddFrameToReplay(new SuperMarioReplayFrame(waitTime, startX, startY, false, false));
+                lastTime = waitTime;
+            }
+            
+            // 生成移动帧（从当前位置移动到敌人位置）
+            double timeDiff = ApplyModsToTimeDelta(lastTime, enemyTime);
+            
+            if (timeDiff > 0)
+            {
+                // 计算移动目标X
+                // 敌人到达判定线的时间 = enemyTime
+                // 敌人位置 = SPAWN_X - (enemyTime - enemy.SpawnTime) * speed
+                // 假设敌人Spawn在 enemyTime + 20000
+                double enemySpawnTime = enemyTime + 20000;
+                float enemyX = (float)(SPAWN_X - (enemyTime + 20000 - enemySpawnTime) / 1000.0 * ENEMY_SPEED);
+                
+                // 目标位置：敌人到达判定线时Mario也应该在判定线
+                float targetX = JUDGMENT_X;
+                float targetY = GROUND_Y;
+                
+                // 确定是否需要起跳
+                bool shouldJump = ShouldJump(enemy);
+                
+                // 使用插值生成中间帧
+                GenerateMovementFrames(lastTime, enemyTime, startX, startY, targetX, targetY, shouldJump);
+                
+                // 添加按键帧
+                if (shouldJump)
+                {
+                    AddJumpFrame(enemyTime, targetX, targetY);
+                }
+            }
+        }
+        
+        private bool ShouldJump(SuperMarioHitObject enemy)
+        {
+            // Spiny需要起跳躲避
+            if (enemy.ObjectType == SuperMarioObjectType.Spiny)
+                return true;
+                
+            // Goomba需要起跳踩踏
+            if (enemy.ObjectType == SuperMarioObjectType.Goomba)
+                return true;
+                
+            // Koopa不需要起跳
+            return false;
+        }
+        
+        private void GenerateMovementFrames(double startTime, double endTime, float startX, float startY, float targetX, float targetY, bool shouldJump)
+        {
+            // 生成中间帧
+            for (double t = startTime + GetFrameDelay(startTime); t < endTime; t += GetFrameDelay(t))
+            {
+                float progress = (float)((t - startTime) / (endTime - startTime));
+                
+                // 位置插值 (简化版)
+                float x = startX + (targetX - startX) * progress;
+                float y = startY;
+                
+                // 如果需要跳跃，应用跳跃弧线
+                if (shouldJump && progress > 0.3f && progress < 0.7f)
+                {
+                    y = startY + (targetY - startY - JUMP_HEIGHT) * (float)Math.Sin(progress * Math.PI);
+                }
+                
+                AddFrameToReplay(new SuperMarioReplayFrame(t, x, y, false, false));
+            }
+        }
+        
+        private void AddJumpFrame(double time, float x, float y)
+        {
+            // 起跳帧
+            buttonIndex++;
+            bool isRight = buttonIndex % 2 == 0;
+            
+            AddFrameToReplay(new SuperMarioReplayFrame(time, x, y, true, false));
+            
+            // 起跳后一段时间释放按键
+            double keyUpTime = time + 300;
+            AddFrameToReplay(new SuperMarioReplayFrame(keyUpTime, x, y, false, false));
+        }
+        
+        #region Utilities (from Tau)
+        
+        private double ApplyModsToTimeDelta(double startTime, double endTime)
+        {
+            double delta = endTime - startTime;
+            return timeAffectingMods.Aggregate(delta, (current, mod) => current / mod.ApplyToRate(startTime));
+        }
+        
+        private double ApplyModsToRate(double time, double rate)
+            => timeAffectingMods.Aggregate(rate, (current, mod) => mod.ApplyToRate(time, current));
+        
+        private double GetFrameDelay(double time)
+            => ApplyModsToRate(time, 1000.0 / 60);
+        
+        private int FindInsertionIndex(ReplayFrame frame)
+        {
+            int index = Frames.BinarySearch(frame, new ReplayFrameComparer());
+            
+            if (index < 0)
+                index = ~index;
+            else
+            {
+                while (index < Frames.Count && frame.Time == Frames[index].Time)
+                    ++index;
+            }
+            
+            return index;
+        }
+        
+        private void AddFrameToReplay(ReplayFrame frame) 
+            => Frames.Insert(FindInsertionIndex(frame), frame);
+        
+        private class ReplayFrameComparer : IComparer<ReplayFrame>
+        {
+            public int Compare(ReplayFrame f1, ReplayFrame f2)
+            {
+                if (f1 == null) throw new ArgumentNullException(nameof(f1));
+                if (f2 == null) throw new ArgumentNullException(nameof(f2));
+                return f1.Time.CompareTo(f2.Time);
+            }
+        }
+        
+        #endregion
     }
 }

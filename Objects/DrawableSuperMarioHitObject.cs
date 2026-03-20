@@ -160,7 +160,10 @@ namespace osu.Game.Rulesets.SuperMarioBros.Objects
             catch { }
         }
 
-        public void InitializeAR(float ar, float width, float jX, float sX, float od = 5f)
+        private double baseDuration; // 基础持续时间（不受DT/HT影响）
+        private double clockRate = 1.0; // 时间流速因子
+        
+        public void InitializeAR(float ar, float width, float jX, float sX, float od = 5f, double rate = 1.0)
         {
             try
             {
@@ -168,6 +171,7 @@ namespace osu.Game.Rulesets.SuperMarioBros.Objects
                 judgmentX = jX;
                 spawnX = sX;
                 currentOD = od;
+                clockRate = rate;
                 
                 // 获取SliderVelocity
                 if (HitObject != null && HitObject.SliderVelocity > 0)
@@ -175,17 +179,23 @@ namespace osu.Game.Rulesets.SuperMarioBros.Objects
                     sliderVelocity = HitObject.SliderVelocity;
                 }
                 
-                // AR公式: Math.Max(1.3, 8.0 - AR*0.6)
-                duration = 1000 * Math.Max(1.3, 9.0 - (ar * 0.7));
+                // 基础AR公式: Math.Max(1.3, 9.0 - AR*0.7)
+                baseDuration = 1000 * Math.Max(1.3, 9.0 - (ar * 0.7));
                 
-                // 生命周期
-                LifetimeStart = HitObject.StartTime - duration;
-                LifetimeEnd = HitObject.StartTime + duration + 1.0;
+                // 持续时间保持原始（不受clockRate影响）
+                // 敌人移动速度的调整在Update()中单独处理
+                duration = baseDuration;
+                
+                // 生命周期需要考虑clockRate
+                // DT下敌人移动更慢，需要更长时间才能到达despawn点
+                double adjustedDuration = duration * clockRate;
+                LifetimeStart = HitObject.StartTime - adjustedDuration;
+                LifetimeEnd = HitObject.StartTime + adjustedDuration + 1.0;
                 
                 // 设置Y坐标为地面高度（BottomLeft坐标系下Y=0是地面）
                 Y = 0;
                 
-                Console.WriteLine($"[SMB] Enemy initialized at X={spawnX}, Y={Y}, AR={ar}, OD={od}");
+                Console.WriteLine($"[SMB] Enemy initialized at X={spawnX}, Y={Y}, AR={ar}, OD={od}, Rate={clockRate}, BaseDuration={baseDuration}ms, ActualDuration={duration}ms");
             }
             catch { }
         }
@@ -332,10 +342,13 @@ namespace osu.Game.Rulesets.SuperMarioBros.Objects
                 if (duration <= 0) return;
                 
                 // 进度: 0=spawnX, 1=judgmentX
-                float progress = (float)((Time.Current - HitObject.StartTime) / duration);
+                // 使用真实经过时间来计算移动（不受clockRate影响）
+                // 这样敌人在DT下会以原始速度移动
+                double elapsedRealTime = (Time.Current - HitObject.StartTime) / clockRate;
+                float progress = (float)(elapsedRealTime / duration);
                 float clampedProgress = Math.Clamp(progress, -0.5f, 1.5f);
                 
-                // 从spawnX移动到despawnX
+                // 从spawnX移动到despawnX（原始速度）
                 float totalDistance = spawnX - despawnX;
                 X = spawnX - (clampedProgress * totalDistance);
                 

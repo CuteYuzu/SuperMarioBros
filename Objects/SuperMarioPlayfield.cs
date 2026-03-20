@@ -61,6 +61,17 @@ namespace osu.Game.Rulesets.SuperMarioBros
             scoreProcessor = processor;
         }
 
+        /// <summary>
+        /// 设置最大PP值（用于实时PP计算）
+        /// </summary>
+        public void SetScoreProcessorMaxPP(double movement, double reading, double precision, int totalObjects)
+        {
+            if (scoreProcessor != null)
+            {
+                scoreProcessor.SetMaxPPValues(movement, reading, precision, totalObjects);
+            }
+        }
+
         public void SetDifficultyAttributes(SuperMarioDifficultyAttributes attrs)
         {
             // 难度属性已设置
@@ -92,8 +103,13 @@ namespace osu.Game.Rulesets.SuperMarioBros
         }
 
         private float currentOD = 5f;
-
+  
         public void SetOverallDifficulty(float od) => currentOD = od;
+        
+        // 时钟速率（用于调整敌人移动速度）
+        private double currentClockRate = 1.0;
+        
+        public void SetClockRate(double rate) => currentClockRate = rate;
 
         protected override void Update()
         {
@@ -104,13 +120,13 @@ namespace osu.Game.Rulesets.SuperMarioBros
             {
                 if (hitObject is DrawableSuperMarioHitObject enemy && !enemy.IsInitialized)
                 {
-                    enemy.InitializeAR(currentAR, playfieldWidth, JUDGMENT_X, SPAWN_X, currentOD);
+                    enemy.InitializeAR(currentAR, playfieldWidth, JUDGMENT_X, SPAWN_X, currentOD, currentClockRate);
                     enemy.IsInitialized = true;
                 }
             }
 
             CheckCollisions();
-            
+
             // 自动结束检测：当所有物件均已判定且时间超过最后一个物件的EndTime
             CheckForAutoComplete();
         }
@@ -185,8 +201,8 @@ namespace osu.Game.Rulesets.SuperMarioBros
                         // Koopa判定：Mario的X坐标 > Koopa的X坐标 = 击杀
                         // 即Mario跑到了Koopa前面
                         // 添加时间检查：确保游戏开始后至少0.5秒才触发，避免开局误判
-                        if (enemyState == EnemyState.Normal && 
-                            Mario.X > enemy.X && 
+                        if (enemyState == EnemyState.Normal &&
+                            Mario.X > enemy.X &&
                             Time.Current > enemy.HitObject.StartTime)
                         {
                             enemy.TriggerKoopaKill();

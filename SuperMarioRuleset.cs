@@ -7,10 +7,13 @@ using osu.Game.Rulesets.Difficulty;
 using osuTK.Input;
 using osu.Framework.Input.Bindings;
 using osu.Framework.IO.Stores;
+using osu.Framework.Graphics;
 using System.Collections.Generic;
 using System;
 using System.Linq;
 using osu.Game.Rulesets.SuperMarioBros.Mods;
+using osu.Game.Screens.Ranking.Statistics;
+using osu.Game.Scoring;
 
 namespace osu.Game.Rulesets.SuperMarioBros
 {
@@ -130,6 +133,20 @@ namespace osu.Game.Rulesets.SuperMarioBros
         }
         
         public override PerformanceCalculator CreatePerformanceCalculator() => new SuperMarioPerformanceCalculator();
+        
+        public override StatisticItem[] CreateStatisticsForScore(ScoreInfo score, IBeatmap playableBeatmap)
+        {
+            Console.WriteLine($"[SMB] CreateStatisticsForScore called!");
+            
+            return new[]
+            {
+                new StatisticItem("Performance Breakdown", () => new PerformanceBreakdownChart(score, playableBeatmap)
+                {
+                    RelativeSizeAxes = Axes.X,
+                    AutoSizeAxes = Axes.Y,
+                }),
+            };
+        }
 
         public override IEnumerable<HitResult> GetValidHitResults()
         {
@@ -149,5 +166,45 @@ namespace osu.Game.Rulesets.SuperMarioBros
             new KeyBinding(InputKey.Left, SuperMarioAction.MoveLeft),
             new KeyBinding(InputKey.Right, SuperMarioAction.MoveRight),
         };
+
+        public override IEnumerable<RulesetBeatmapAttribute> GetBeatmapAttributesForDisplay(IBeatmapInfo beatmapInfo, IReadOnlyCollection<Mod> mods)
+        {
+            var originalDifficulty = beatmapInfo.Difficulty;
+            var effectiveDifficulty = GetAdjustedDisplayDifficulty(beatmapInfo, mods);
+            
+            // 计算AR对应的出怪时间
+            double ar = effectiveDifficulty.ApproachRate;
+            double preemptTime = Math.Max(1.3, 9 - 0.7 * ar);
+            
+            // 计算OD对应的Spiny像素判定
+            double od = effectiveDifficulty.OverallDifficulty;
+            double spinySize = 1 + 2.9 * od;  // OD 0 = 1px, OD 10 = 30px
+
+            // AR: Approach Rate - 控制小怪出现时间（AR越大，小怪出现得越快）
+            yield return new RulesetBeatmapAttribute("Approach Rate", @"AR", originalDifficulty.ApproachRate, effectiveDifficulty.ApproachRate, 10)
+            {
+                Description = "控制小怪在屏幕上的出现时间。AR越大，小怪出现得越快。",
+                AdditionalMetrics = new[]
+                {
+                    new RulesetBeatmapAttribute.AdditionalMetric("小怪出现时间", $"{preemptTime:F2} 秒")
+                }
+            };
+
+            // OD: Overall Difficulty - 控制Spiny的像素间距（OD越大，Spiny间距越小，难度越高）
+            yield return new RulesetBeatmapAttribute("Accuracy", @"OD", originalDifficulty.OverallDifficulty, effectiveDifficulty.OverallDifficulty, 10)
+            {
+                Description = "控制Spiny的判定框大小。OD越大，Spiny的判定框越大，难度越高。",
+                AdditionalMetrics = new[]
+                {
+                    new RulesetBeatmapAttribute.AdditionalMetric("Spiny判定框大小", $"{spinySize:F1} x {spinySize:F1} 像素")
+                }
+            };
+
+            // HP: Health Drain - 仍然是掉血速度
+            yield return new RulesetBeatmapAttribute("HP Drain", @"HP", originalDifficulty.DrainRate, effectiveDifficulty.DrainRate, 10)
+            {
+                Description = "控制生命值衰减速度。HP越大，掉血越快。"
+            };
+        }
     }
 }
