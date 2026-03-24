@@ -120,6 +120,26 @@ AR → ms: 1000 × max(1.3, 9.0 - (ar × 0.7))
   - 跳跃手感优化（提前4像素起跳，需松开按键才能再次起跳）
   - 选歌界面增强（AR/OD/HP 显示 + 物件统计 Goomba/Koopa/Spiny 数量）
   - 修复 DT/HT 速度错误（DT=1.5x, HT=0.75x）
+- **2026-03-24**：v1.2.0 发布
+  - **Replay 机制**：集成 osu! Replay 系统，支持回放播放
+    - 实现 `IHasReplayHandler` 接口
+    - 实现 `IConvertibleReplayFrame` 接口（支持导入/导出 .osr）
+    - 新增 `SuperMarioFramedReplayInputHandler` 处理回放输入
+    - 新增 `SuperMarioReplayRecorder` 录制玩家操作
+  - **Precision PP 优化**：
+    - 衰减系数从 0.9 改为 0.9963
+    - 改为按 Precision PP 降序排列后加权
+    - 最低权重限制为 0.04
+  - **Movement/Reading PP 优化**：
+    - 衰减系数从 0.95 改为 0.98（后 Reading 单独改为 0.8）
+    - Reading PP 新增 Spiny 个数加成（≥5 个才有加成）
+    - Reading PP 新增 Spiny 平均距离加成（<400ms 才有加成）
+  - **Seek 机制优化**：
+    - seek 时自动重置所有敌人状态
+    - 新增 500ms seek 冷却时间，防止错误判定
+  - **Bug 修复**：
+    - 修复 Precision PP 数组越界问题
+    - 修复多线程文件写入冲突问题（添加文件锁）
 
 ---
 
