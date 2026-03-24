@@ -7,8 +7,11 @@ using osu.Framework.Input.Events;
 using osuTK.Input;
 using osu.Game.Rulesets.UI;
 using osu.Game.Rulesets.SuperMarioBros.UI;
+using osu.Game.Rulesets.Replays;
+using osu.Game.Input.Handlers;
 using osu.Game.Screens.Play.HUD;
 using osu.Game.Screens.Play.HUD.ClicksPerSecond;
+using osu.Game.Scoring;
 using System;
 using System.Linq;
 
@@ -29,9 +32,14 @@ namespace osu.Game.Rulesets.SuperMarioBros
     /// SuperMarioInputManager - 输入管理器
     /// </summary>
     [Cached]
-    public partial class SuperMarioInputManager : RulesetInputManager<SuperMarioAction>
+    public partial class SuperMarioInputManager : RulesetInputManager<SuperMarioAction>, IHasReplayHandler, IHasRecordingHandler
     {
         private MarioCharacter? mario;
+        
+        /// <summary>
+        /// Replay 录制器
+        /// </summary>
+        public ReplayRecorder? Recorder { get; set; }
         
         /// <summary>
         /// 按键状态变化回调 - Action<SuperMarioAction, bool> (动作, 是否按下)

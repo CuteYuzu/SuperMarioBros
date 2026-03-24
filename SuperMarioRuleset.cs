@@ -12,6 +12,8 @@ using System.Collections.Generic;
 using System;
 using System.Linq;
 using osu.Game.Rulesets.SuperMarioBros.Mods;
+using osu.Game.Rulesets.SuperMarioBros.Replays;
+using osu.Game.Rulesets.Replays.Types;
 using osu.Game.Screens.Ranking.Statistics;
 using osu.Game.Scoring;
 
@@ -133,6 +135,11 @@ namespace osu.Game.Rulesets.SuperMarioBros
         }
         
         public override PerformanceCalculator CreatePerformanceCalculator() => new SuperMarioPerformanceCalculator();
+        
+        /// <summary>
+        /// 创建可转换的回放帧（用于导入/导出回放）
+        /// </summary>
+        public override IConvertibleReplayFrame CreateConvertibleReplayFrame() => new SuperMarioReplayFrame();
         
         public override StatisticItem[] CreateStatisticsForScore(ScoreInfo score, IBeatmap playableBeatmap)
         {

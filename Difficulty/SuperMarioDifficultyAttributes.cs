@@ -55,6 +55,16 @@ namespace osu.Game.Rulesets.SuperMarioBros.Difficulty
         /// </summary>
         public double IntensityBonus { get; set; }
         
+        /// <summary>
+        /// 长度加成（基于物件总数）
+        /// </summary>
+        public double LengthBonus { get; set; }
+        
+        /// <summary>
+        /// 速度加成（基于 ClockRate）
+        /// </summary>
+        public double ClockRateBonus { get; set; }
+        
         // ===== 第四十四轮新增：Timing物件统计 =====
         /// <summary>
         /// Timing判定物件总数（Goomba + Spiny）

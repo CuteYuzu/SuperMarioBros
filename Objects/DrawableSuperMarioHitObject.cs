@@ -359,6 +359,9 @@ namespace osu.Game.Rulesets.SuperMarioBros.Objects
 
         protected override void CheckForResult(bool userTriggered, double timeOffset)
         {
+            // seek 冷却时间内不进行判定
+            if (IsInSeekCooldown()) return;
+            
             // 强制空间判定：禁用法定时机判定
             // 无论timeOffset是多少，都允许正常判定
             if (Judged) return;
@@ -384,6 +387,51 @@ namespace osu.Game.Rulesets.SuperMarioBros.Objects
                 }
                 
             }
+        }
+        
+        // seek 冷却时间（毫秒）- 在这段时间内不进行判定
+        private double seekCooldownEndTime = 0;
+        
+        /// <summary>
+        /// 重置敌人状态以便重新播放（seek 时调用）
+        /// </summary>
+        public void ResetForSeek()
+        {
+            try
+            {
+                // 重置状态
+                state = EnemyState.Normal;
+                isKicked = false;
+                
+                // 重置视觉外观
+                SetAppearance();
+                
+                // 重置位置到生成点
+                X = spawnX;
+                
+                // 重置透明度
+                Alpha = 1f;
+                
+                // 重置 Scale
+                Scale = Vector2.One;
+                
+                // 设置 seek 冷却时间（500ms 内不判定）
+                seekCooldownEndTime = Time.Current + 500;
+                
+                Console.WriteLine($"[SMB] Enemy reset for seek: {HitObject?.ObjectType} at {HitObject?.StartTime}, cooldown until {seekCooldownEndTime}");
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[SMB] Error resetting enemy: {ex.Message}");
+            }
+        }
+        
+        /// <summary>
+        /// 检查是否在 seek 冷却时间内
+        /// </summary>
+        public bool IsInSeekCooldown()
+        {
+            return Time.Current < seekCooldownEndTime;
         }
     }
 }

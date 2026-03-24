@@ -10,10 +10,31 @@ using osu.Game.Scoring;
 namespace osu.Game.Rulesets.SuperMarioBros
 {
     /// <summary>
-    /// SuperMarioPerformanceCalculator - PP计算器（第四十四轮改进：osu!std Accuracy PP公式）
+    /// SuperMarioPerformanceCalculator - PP计算器（第四十五轮改进：基于落点分布模型的Reading PP）
     /// </summary>
     public class SuperMarioPerformanceCalculator : PerformanceCalculator
     {
+        // 当前谱面信息（用于日志输出）
+        public static string CurrentMapInfo { get; set; } = "Unknown";
+        
+        /// <summary>
+        /// 从 difficulty attributes 获取谱面信息
+        /// </summary>
+        private static string GetMapInfoFromAttributes(DifficultyAttributes attrs)
+        {
+            try
+            {
+                if (attrs is SuperMarioDifficultyAttributes smbAttrs)
+                {
+                    return $"G:{smbAttrs.GoombaCount}|K:{smbAttrs.KoopaCount}|S:{smbAttrs.SpinyCount}";
+                }
+                return "Unknown";
+            }
+            catch
+            {
+                return "Unknown";
+            }
+        }
         // PP计算参数
         private const double P_NORM = 1.1;
         
@@ -37,6 +58,10 @@ namespace osu.Game.Rulesets.SuperMarioBros
 
         protected override PerformanceAttributes CreatePerformanceAttributes(ScoreInfo score, DifficultyAttributes attributes)
         {
+            // 获取谱面信息
+            if (CurrentMapInfo == "Unknown")
+                CurrentMapInfo = GetMapInfoFromAttributes(attributes);
+            
             var smbAttributes = (SuperMarioDifficultyAttributes)attributes;
             
             Console.WriteLine($"[SMB PerfCalc] StarRating={smbAttributes.StarRating}, MaxCombo={smbAttributes.MaxCombo}");
@@ -56,20 +81,7 @@ namespace osu.Game.Rulesets.SuperMarioBros
             double accuracy = score.Accuracy;
             Console.WriteLine($"[SMB PerfCalc] Accuracy={accuracy:P1}, TotalObjects={totalObjects}");
             
-            // osu!std Accuracy PP公式: 1.52163^OD * accuracy^24 * 2.83
-            // 注意：accuracy低于90%时，此值会趋近于0
-            double accuracyValue = Math.Pow(ACCURACY_OD_BASE, od) * Math.Pow(accuracy, ACCURACY_POWER) * ACCURACY_BASE;
-            
-            // 长图加成（基于总物件数）
-            double accuracyLengthBonus = Math.Min(1.15, Math.Pow(totalObjects / 1000.0, 0.3));
-            accuracyValue *= accuracyLengthBonus;
-            
-            Console.WriteLine($"[SMB PerfCalc] AccuracyPP (osu!std): {accuracyValue:F2} = {ACCURACY_OD_BASE:F5}^{od:F1} * {accuracy:P1}^{ACCURACY_POWER:F0} * {ACCURACY_BASE:F2} * {accuracyLengthBonus:F3}");
-            
-            // 合成总PP（含Accuracy）
-            double totalPP = CalculateTotalPP(movementPP, readingPP, precisionPP, accuracyValue);
-            
-            // 获取ClockRate（从ScoreInfo的Mods中）
+            // 获取 ClockRate（从 ScoreInfo 的 Mods 中）
             double clockRate = 1.0;
             if (score.Mods != null)
             {
@@ -96,52 +108,55 @@ namespace osu.Game.Rulesets.SuperMarioBros
             
             // 全局速度加成：ClockRate^1.1（DT/NC时PP直接增加）
             double clockRateBonus = Math.Pow(clockRate, 1.1);
-            totalPP *= clockRateBonus;
-            Console.WriteLine($"[SMB PerfCalc] ClockRate Bonus={clockRateBonus:F3}");
             
             // 计算物件总数（用于长度系数）
             int objectCount = smbAttributes.GoombaCount + smbAttributes.KoopaCount + smbAttributes.SpinyCount;
             
-            // ===== 第四十二轮改进：应用新的长度系数 =====
-            // 使用总物件数作为长度系数计算的基础
+            // 计算长度加成
             double lengthBonus = CalculateLengthBonus(objectCount);
             
-            // ===== 第四十二轮改进：获取Intensity Bonus（DT密度溢价）=====
-            // 如果DifficultyAttributes中有IntensityBonus，使用它；否则计算
+            // 获取 Intensity Bonus
             double intensityBonus = smbAttributes.IntensityBonus > 0 ? smbAttributes.IntensityBonus : 1.0;
             
-            // 如果有DT mod但IntensityBonus未计算，需要重新计算
-            if (clockRate > 1.0 && intensityBonus == 1.0)
-            {
-                // 估算物件密度（基于总时长）
-                double durationSeconds = smbAttributes.MaxCombo > 0 ? (smbAttributes.MaxCombo * 1000.0 / (clockRate * 2.0)) : 60.0; // 简化估算
-                double density = objectCount / Math.Max(1, durationSeconds);
-                
-                // 计算Intensity Bonus
-                const double DENSITY_THRESHOLD = 3.0;
-                const double DENSITY_SCALE = 5.0;
-                const double DENSITY_BONUS_MAX = 0.15;
-                
-                if (density > DENSITY_THRESHOLD)
-                {
-                    double densityExcess = (density - DENSITY_THRESHOLD) / DENSITY_SCALE;
-                    intensityBonus = 1.0 + DENSITY_BONUS_MAX * Math.Min(1.0, densityExcess);
-                }
-            }
-            
-            totalPP *= lengthBonus * intensityBonus;
-            Console.WriteLine($"[SMB PerfCalc] LengthBonus={lengthBonus:F3}, IntensityBonus={intensityBonus:F3} for {objectCount} objects");
-            
-            // ===== 第四十二轮改进：动态Miss惩罚 =====
-            // 使用新公式：0.96^(miss^1.2 / (totalHits/1000)^0.25)
+            // 获取 Miss 数量
             int missCount = score.Statistics.ContainsKey(HitResult.Miss) ? score.Statistics[HitResult.Miss] : 0;
             
+            // 计算 Miss 惩罚
+            double missPenalty = 1.0;
             if (missCount > 0)
             {
-                double missPenalty = CalculateMissPenalty(missCount, objectCount);
-                totalPP *= missPenalty;
-                Console.WriteLine($"[SMB PerfCalc] Miss Penalty={missPenalty:F4} for {missCount} misses");
+                missPenalty = CalculateMissPenalty(missCount, objectCount);
             }
+            
+            // 将 Miss 惩罚应用到各维度（不包括 Accuracy）
+            movementPP *= missPenalty;
+            readingPP *= missPenalty;
+            precisionPP *= missPenalty;
+            
+            Console.WriteLine($"[SMB PerfCalc] MissPenalty={missPenalty:F4} for {missCount} misses");
+            
+            // 计算 Accuracy PP（使用 osu!std 公式）
+            // 公式: 2.83 * 1.52163^OD * Accuracy^24 * min(1.15, (CIRCLE_COUNT/1000)^0.3)
+            // CIRCLE_COUNT 改为 Goomba + Spiny 的数量（这些是有判定点的物件）
+            int circleCount = smbAttributes.GoombaCount + smbAttributes.SpinyCount;
+            double accuracyLengthBonus = Math.Min(1.15, Math.Pow(circleCount / 1000.0, 0.3));
+            
+            double accuracyValue = ACCURACY_BASE * Math.Pow(ACCURACY_OD_BASE, od) * Math.Pow(accuracy, ACCURACY_POWER) * accuracyLengthBonus;
+            
+            Console.WriteLine($"[SMB PerfCalc] AccuracyPP: {accuracyValue:F2} = {ACCURACY_BASE:F2} * {ACCURACY_OD_BASE:F5}^{od:F1} * {accuracy:P1}^{ACCURACY_POWER:F0} * {accuracyLengthBonus:F3} (circles={circleCount})");
+            
+            // 合成总 PP
+            double totalPP = CalculateTotalPP(movementPP, readingPP, precisionPP, accuracyValue);
+            
+            // 应用 clockRateBonus
+            totalPP *= clockRateBonus;
+            
+            Console.WriteLine($"[SMB PerfCalc] LengthBonus={lengthBonus:F3}, IntensityBonus={intensityBonus:F3}, ClockRateBonus={clockRateBonus:F3}");
+            Console.WriteLine($"[SMB PerfCalc] Final PP Breakdown: M={movementPP:F2}, R={readingPP:F2}, P={precisionPP:F2}, A={accuracyValue:F2}, Total={totalPP:F2}");
+            
+            // 输出到文件
+            string perfDebug = $"[{CurrentMapInfo}] [PerformanceCalculator] accuracy={accuracy:F4}, movementPP={movementPP:F2}, readingPP={readingPP:F2}, precisionPP={precisionPP:F2}, accuracyPP={accuracyValue:F2}, totalPP={totalPP:F2}, clockRate={clockRate:F2}, missCount={missCount}\n";
+            System.IO.File.AppendAllText("C:\\temp\\smb_debug.txt", perfDebug);
             
             Console.WriteLine($"[SMB PerfCalc] PP Breakdown: Movement={movementPP:F2}, Reading={readingPP:F2}, Precision={precisionPP:F2}, Accuracy={accuracyValue:F2}");
             Console.WriteLine($"[SMB PerfCalc] Final Total = {totalPP:F2} (OD={od:F1}, Acc={accuracy:P1}, Miss={missCount})");

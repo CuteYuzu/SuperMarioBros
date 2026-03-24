@@ -8,6 +8,7 @@ using osu.Game.Rulesets.SuperMarioBros.Difficulty;
 using osu.Framework.Graphics;
 using osu.Framework.Graphics.Containers;
 using osu.Framework.Graphics.Shapes;
+using osu.Framework.Allocation;
 using osuTK;
 using osuTK.Graphics;
 using System;
@@ -18,6 +19,7 @@ namespace osu.Game.Rulesets.SuperMarioBros
     /// <summary>
     /// SuperMarioPlayfield - 游戏区域
     /// </summary>
+    [Cached]
     public partial class SuperMarioPlayfield : Playfield
     {
         // BottomLeft坐标系：0,0是左下角地面
@@ -31,8 +33,36 @@ namespace osu.Game.Rulesets.SuperMarioBros
         private Box? groundBox;
 
         private SuperMarioScoreProcessor? scoreProcessor;
+        
+        /// <summary>
+        /// 获取 ScoreProcessor（供外部调用获取实时 PP）
+        /// </summary>
+        public SuperMarioScoreProcessor? GetScoreProcessor() => scoreProcessor;
+        
         private float currentAR = 5f;
         private float playfieldWidth = 1024f;
+
+        [BackgroundDependencyLoader(true)]
+        private void load(ScoreProcessor? scoreProc)
+        {
+            if (scoreProc is SuperMarioScoreProcessor smbSP)
+            {
+                scoreProcessor = smbSP;
+                Console.WriteLine("[SMB] ScoreProcessor connected via DI!");
+                
+                // 如果有待设置的难度属性，现在设置
+                if (pendingDifficultyAttributes != null)
+                {
+                    scoreProcessor.SetMaxPPValues(
+                        pendingDifficultyAttributes.MovementPP,
+                        pendingDifficultyAttributes.ReadingPP,
+                        pendingDifficultyAttributes.PrecisionPP,
+                        pendingDifficultyAttributes.MaxCombo);
+                    Console.WriteLine($"[SMB] Pending difficulty applied after ScoreProcessor connected! MaxCombo={pendingDifficultyAttributes.MaxCombo}");
+                    pendingDifficultyAttributes = null;
+                }
+            }
+        }
 
         public SuperMarioPlayfield()
         {
@@ -72,10 +102,89 @@ namespace osu.Game.Rulesets.SuperMarioBros
             }
         }
 
+        // 待设置的难度属性（当 ScoreProcessor 连接后自动设置）
+        private SuperMarioDifficultyAttributes? pendingDifficultyAttributes;
+        
         public void SetDifficultyAttributes(SuperMarioDifficultyAttributes attrs)
         {
-            // 难度属性已设置
-            Console.WriteLine($"[SMB] Difficulty set: MaxPP={attrs.MaxPP}, SR={attrs.StarRating:F2}");
+            // 存储难度属性用于PP计算
+            currentDifficulty = attrs;
+            
+            // 同时设置 ScoreProcessor 的总物件数（用于 PP 进度计算）
+            if (scoreProcessor != null)
+            {
+                scoreProcessor.SetMaxPPValues(attrs.MovementPP, attrs.ReadingPP, attrs.PrecisionPP, attrs.MaxCombo);
+                Console.WriteLine($"[SMB] Difficulty set with ScoreProcessor: SR={attrs.StarRating:F2}, MaxCombo={attrs.MaxCombo}");
+            }
+            else
+            {
+                // ScoreProcessor 还未连接，保存待设置
+                pendingDifficultyAttributes = attrs;
+                Console.WriteLine($"[SMB] Difficulty saved pending ScoreProcessor: SR={attrs.StarRating:F2}, MaxCombo={attrs.MaxCombo}");
+            }
+            
+            Console.WriteLine($"[SMB] Difficulty set: SR={attrs.StarRating:F2}, Movement={attrs.MovementPP:F2}, Reading={attrs.ReadingPP:F2}, Precision={attrs.PrecisionPP:F2}, MaxCombo={attrs.MaxCombo}");
+        }
+        
+        private SuperMarioDifficultyAttributes? currentDifficulty;
+
+        /// <summary>
+        /// 获取实时PP值
+        /// </summary>
+        public (double movement, double reading, double precision, double accuracy, double total) GetCurrentPP()
+        {
+            if (currentDifficulty == null)
+                return (0, 0, 0, 0, 0);
+            
+            // 根据进度计算实时PP
+            double progress = GetProgress();
+            double accuracyFactor = scoreProcessor?.CurrentAccuracy ?? 1.0;
+            
+            // 当前PP = 最大PP * 进度 * 准确率
+            double movement = currentDifficulty.MovementPP * progress * accuracyFactor;
+            double reading = currentDifficulty.ReadingPP * progress * accuracyFactor;
+            double precision = currentDifficulty.PrecisionPP * progress * accuracyFactor;
+            double accuracy = currentDifficulty.AccuracyPP * accuracyFactor;
+            double total = Math.Pow(
+                Math.Pow(movement, 1.1) + Math.Pow(reading, 1.1) + 
+                Math.Pow(precision, 1.1) + Math.Pow(accuracy, 1.1), 
+                1.0 / 1.1);
+            
+            return (movement, reading, precision, accuracy, total);
+        }
+
+        /// <summary>
+        /// 获取最大PP值
+        /// </summary>
+        public (double movement, double reading, double precision, double accuracy, double total) GetMaxPP()
+        {
+            if (currentDifficulty == null)
+                return (0, 0, 0, 0, 0);
+            
+            // 计算最大PP（SS时）
+            double maxAccuracy = currentDifficulty.AccuracyPP;
+            double totalPP = Math.Pow(
+                Math.Pow(currentDifficulty.MovementPP, 1.1) + 
+                Math.Pow(currentDifficulty.ReadingPP, 1.1) + 
+                Math.Pow(currentDifficulty.PrecisionPP, 1.1) + 
+                Math.Pow(maxAccuracy, 1.1), 
+                1.0 / 1.1);
+            
+            return (currentDifficulty.MovementPP, currentDifficulty.ReadingPP, 
+                    currentDifficulty.PrecisionPP, maxAccuracy, totalPP);
+        }
+        
+        /// <summary>
+        /// 获取当前进度（0-1）- 使用物件处理进度
+        /// </summary>
+        private double GetProgress()
+        {
+            if (currentDifficulty == null || currentDifficulty.MaxCombo <= 0)
+                return 0;
+            
+            // 使用ScoreProcessor追踪的已处理物件数
+            int processed = scoreProcessor?.ProcessedObjectCount ?? 0;
+            return Math.Min(1.0, (double)processed / currentDifficulty.MaxCombo);
         }
 
         public void SetApproachRate(float ar) => currentAR = ar;
@@ -98,6 +207,7 @@ namespace osu.Game.Rulesets.SuperMarioBros
             // 传递OD值用于计算无敌时长
             mario.SetOverallDifficulty(currentOD);
 
+            // OnStomp 只处理连续踩踏链，不增加 Combo
             mario.OnStomp += (score) => scoreProcessor?.OnStomp();
             mario.OnOneUp += () => Console.WriteLine("[SMB] 1UP!");
         }
@@ -110,6 +220,34 @@ namespace osu.Game.Rulesets.SuperMarioBros
         private double currentClockRate = 1.0;
         
         public void SetClockRate(double rate) => currentClockRate = rate;
+
+        /// <summary>
+        /// 重置所有敌人的状态（当 seek 时调用）
+        /// </summary>
+        public void ResetAllEnemies()
+        {
+            Console.WriteLine("[SMB] Resetting all enemies...");
+            lastObjectEndTime = 0;
+            
+            foreach (var hitObject in AllHitObjects)
+            {
+                if (hitObject is DrawableSuperMarioHitObject enemy)
+                {
+                    // 重置敌人的状态
+                    enemy.ResetForSeek();
+                }
+            }
+            
+            // 重新初始化所有敌人
+            foreach (var hitObject in AllHitObjects)
+            {
+                if (hitObject is DrawableSuperMarioHitObject enemy && !enemy.IsInitialized)
+                {
+                    enemy.InitializeAR(currentAR, playfieldWidth, JUDGMENT_X, SPAWN_X, currentOD, currentClockRate);
+                    enemy.IsInitialized = true;
+                }
+            }
+        }
 
         protected override void Update()
         {
@@ -189,10 +327,12 @@ namespace osu.Game.Rulesets.SuperMarioBros
                     case SuperMarioObjectType.Goomba:
                         // Goomba判定：Mario中心点进入Goomba碰撞箱 = 击杀
                         // 移除击杀后的反弹，保持Mario原有运动轨迹
-                        if (CheckGoombaCollision(Mario, enemy))
+                        // 添加 seek 冷却时间检查
+                        if (!enemy.IsInSeekCooldown() && CheckGoombaCollision(Mario, enemy))
                         {
                             enemy.TriggerGoombaKill();
-                            scoreProcessor?.OnGoombaKill();
+                            // 手动更新已处理物件计数（用于 PP 进度计算）
+                            scoreProcessor?.OnObjectProcessed(true);
                             Console.WriteLine($"[SMB] Goomba killed at X={enemy.X}");
                         }
                         break;
@@ -201,12 +341,15 @@ namespace osu.Game.Rulesets.SuperMarioBros
                         // Koopa判定：Mario的X坐标 > Koopa的X坐标 = 击杀
                         // 即Mario跑到了Koopa前面
                         // 添加时间检查：确保游戏开始后至少0.5秒才触发，避免开局误判
+                        // 添加 seek 冷却时间检查
                         if (enemyState == EnemyState.Normal &&
+                            !enemy.IsInSeekCooldown() &&
                             Mario.X > enemy.X &&
                             Time.Current > enemy.HitObject.StartTime)
                         {
                             enemy.TriggerKoopaKill();
-                            scoreProcessor?.OnKoopaKill();
+                            // 手动更新已处理物件计数
+                            scoreProcessor?.OnObjectProcessed(true);
                             Console.WriteLine($"[SMB] Koopa passed at Mario.X={Mario.X}, enemy.X={enemy.X}");
                         }
                         // 龟壳处理（Koopa被踩后变成龟壳）
@@ -224,6 +367,8 @@ namespace osu.Game.Rulesets.SuperMarioBros
                                 Mario.TakeDamage();
                                 enemy.TriggerResult(HitResult.Miss);
                                 scoreProcessor?.ResetCombo();
+                                // 标记为处理过（Miss）
+                                scoreProcessor?.OnObjectProcessed(false);
                             }
                         }
                         else if (enemyState == EnemyState.MovingShell)
@@ -238,6 +383,7 @@ namespace osu.Game.Rulesets.SuperMarioBros
                                         scoreProcessor?.OnShellKick();
                                         e.TriggerResult(HitResult.Miss);
                                         e.Expire();
+                                        scoreProcessor?.OnObjectProcessed(false);
                                     }
                                 }
                             }
@@ -247,11 +393,15 @@ namespace osu.Game.Rulesets.SuperMarioBros
                                 Mario.TakeDamage();
                                 enemy.TriggerResult(HitResult.Miss);
                                 scoreProcessor?.ResetCombo();
+                                scoreProcessor?.OnObjectProcessed(false);
                             }
                         }
                         break;
 
                     case SuperMarioObjectType.Spiny:
+                        // 添加 seek 冷却时间检查
+                        if (enemy.IsInSeekCooldown()) break;
+                        
                         // Spiny判定：碰撞 = 受伤消失，躲避成功 = Perfect + Combo
                         // Auto模式下：不触发Miss，只触发Perfect
                         if (Mario.IsAutoMode)
@@ -260,7 +410,7 @@ namespace osu.Game.Rulesets.SuperMarioBros
                             if (enemy.X < -50 && !enemy.AllJudged)
                             {
                                 enemy.TriggerResult(HitResult.Perfect);
-                                scoreProcessor?.OnSpinyDodged();
+                                scoreProcessor?.OnObjectProcessed(true);
                                 Console.WriteLine("[SMB] Auto: Spiny dodged!");
                             }
                         }
@@ -274,14 +424,14 @@ namespace osu.Game.Rulesets.SuperMarioBros
                             }
                             enemy.Expire();
                             enemy.TriggerResult(HitResult.Miss);
-                            scoreProcessor?.OnSpinyHit();
+                            scoreProcessor?.OnObjectProcessed(false);
                             Console.WriteLine($"[SMB] Spiny hit - Mario {(Mario.IsInvincible ? "invincible" : "damaged")}");
                         }
                         // 成功躲避（到达屏幕左侧X<0且未碰撞）
                         else if (enemy.X < -50 && !enemy.AllJudged)
                         {
                             enemy.TriggerResult(HitResult.Perfect);
-                            scoreProcessor?.OnSpinyDodged();
+                            scoreProcessor?.OnObjectProcessed(true);
                             Console.WriteLine("[SMB] Spiny dodged!");
                         }
                         break;

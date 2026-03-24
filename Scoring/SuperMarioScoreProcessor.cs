@@ -169,29 +169,53 @@ namespace osu.Game.Rulesets.SuperMarioBros
         }
         
         /// <summary>
-        /// 重新计算总PP（使用1.1次方合成 + 第四十二轮改进：动态Miss惩罚）
+        /// 重新计算总PP（使用1.1次方合成 + Miss惩罚应用到各维度）
         /// </summary>
         private void RecalculatePP()
         {
-            // 计算OD缩放
-            double odScale = 1.0 + 0.1 * (od - 5.0);
+            // 使用 osu!std Accuracy PP 公式：1.52163^OD * accuracy^24 * 2.83
+            const double ACCURACY_OD_BASE = 1.52163;
+            const double ACCURACY_POWER = 24.0;
+            const double ACCURACY_BASE = 2.83;
             
-            // AccuracyPP = BaseValue * Accuracy^8 * ODScale
-            AccuracyPP = basePPValue * Math.Pow(CurrentAccuracy, ACCURACY_POWER) * odScale;
+            // 计算 Accuracy PP（使用实时准确率）
+            double odScale = Math.Pow(ACCURACY_OD_BASE, od);
+            double currentAccuracyPP = odScale * Math.Pow(CurrentAccuracy, ACCURACY_POWER) * ACCURACY_BASE;
             
-            // TotalPP = (Movement^1.1 + Reading^1.1 + Precision^1.1 + Accuracy^1.1)^(1/1.1)
-            double sum = Math.Pow(MovementPP, P_NORM) + 
-                         Math.Pow(ReadingPP, P_NORM) + 
-                         Math.Pow(PrecisionPP, P_NORM) + 
-                         Math.Pow(AccuracyPP, P_NORM);
+            // 计算 Length Bonus（基于当前已处理物件数）
+            double currentLengthBonus = CalculateLengthBonus(ProcessedObjectCount);
             
-            double totalPPBeforeMiss = Math.Pow(sum, 1.0 / P_NORM);
-            
-            // ===== 第四十二轮新增：动态Miss惩罚 =====
+            // 计算 Miss 惩罚
             double missPenalty = CalculateMissPenalty(MissCount, totalObjects);
-            CurrentPP = totalPPBeforeMiss * missPenalty;
             
-            // Console.WriteLine($"[SMB] PP Recalculated: Base={totalPPBeforeMiss:F2}, MissPenalty={missPenalty:F4}, Final={CurrentPP:F2}");
+            // 将 Miss 惩罚应用到各维度（不包括 Accuracy）
+            double effectiveMovement = MovementPP * currentLengthBonus * intensityBonus * missPenalty;
+            double effectiveReading = ReadingPP * currentLengthBonus * intensityBonus * missPenalty;
+            double effectivePrecision = PrecisionPP * currentLengthBonus * intensityBonus * missPenalty;
+            // Accuracy 不应用 Miss 惩罚，只和准确率相关
+            
+            // 合成总 PP
+            double sum = Math.Pow(effectiveMovement, P_NORM) + 
+                         Math.Pow(effectiveReading, P_NORM) + 
+                         Math.Pow(effectivePrecision, P_NORM) + 
+                         Math.Pow(currentAccuracyPP, P_NORM);
+            
+            CurrentPP = Math.Pow(sum, 1.0 / P_NORM);
+            
+            Console.WriteLine($"[SMB ScoreProcessor] PP: Acc={CurrentAccuracy:P1}, Miss={MissCount}, LB={currentLengthBonus:F3}, IB={intensityBonus:F3}, MissPen={missPenalty:F3}, Total={CurrentPP:F2}");
+        }
+        
+        /// <summary>
+        /// 计算长度加成
+        /// </summary>
+        private double CalculateLengthBonus(int objectCount)
+        {
+            if (objectCount < 500)
+                return 0.95 + 0.4 * Math.Min(1.0, objectCount / 1500.0);
+            else if (objectCount <= 1500)
+                return 0.95 + 0.4 * Math.Min(1.0, objectCount / 1500.0);
+            else
+                return Math.Min(1.5, 1.35 + 0.1 * Math.Log10(objectCount / 1500.0));
         }
         
         /// <summary>
@@ -401,6 +425,26 @@ namespace osu.Game.Rulesets.SuperMarioBros
         {
             ConsecutiveStomps = 0;
             BreakCombo();
+        }
+        
+        /// <summary>
+        /// 完全重置 ScoreProcessor（seek 时调用）
+        /// </summary>
+        public void Reset()
+        {
+            ConsecutiveStomps = 0;
+            OneUpCount = 0;
+            GoombasKilled = 0;
+            KoopasKilled = 0;
+            SpiniesDodged = 0;
+            SpiniesHit = 0;
+            MissCount = 0;
+            TimingObjectCount = 0;
+            TimingScore = 0;
+            ProcessedObjectCount = 0;
+            BreakCombo();
+            
+            Console.WriteLine("[SMB] ScoreProcessor reset for seek");
         }
 
         public void OnDeath()
